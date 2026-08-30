@@ -15,7 +15,7 @@ describe("surfaces derive from one source", () => {
     for (const summary of list) {
       const detail = await getProject(summary.slug);
       expect(detail).toBeDefined();
-      const { body: _body, ...detailWithoutBody } = detail!;
+      const { body, ...detailWithoutBody } = detail!;
       expect(detailWithoutBody).toEqual(summary);
     }
   });

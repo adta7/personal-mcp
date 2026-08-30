@@ -38,7 +38,7 @@ export async function listProjects(options: ListProjectsOptions = {}): Promise<P
   return projects
     .filter((p) => (options.featured === undefined ? true : p.featured === options.featured))
     .filter((p) => (options.status === undefined ? true : p.status === options.status))
-    .map(({ body: _body, ...summary }) => summary);
+    .map(({ body, ...summary }) => summary);
 }
 
 export async function getProject(slug: string): Promise<Project | undefined> {
@@ -48,7 +48,7 @@ export async function getProject(slug: string): Promise<Project | undefined> {
 
 export async function listPosts(): Promise<PostSummary[]> {
   const { posts } = await loadContent();
-  return posts.map(({ body: _body, ...summary }) => summary);
+  return posts.map(({ body, ...summary }) => summary);
 }
 
 export async function getPost(slug: string): Promise<Post | undefined> {

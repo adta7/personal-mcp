@@ -58,10 +58,28 @@ const boundaries = [
   },
 ];
 
+/**
+ * Destructuring a field out to drop it -- `const { body, ...summary } = project` -- is the
+ * idiom the resolvers use to build list views. ignoreRestSiblings makes that first-class
+ * rather than something we silence with an underscore at each call site.
+ */
+const unusedVars = [
+  {
+    files: ["src/**/*.{ts,tsx}", "tests/**/*.ts"],
+    rules: {
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { ignoreRestSiblings: true, argsIgnorePattern: "^_", caughtErrorsIgnorePattern: "^_" },
+      ],
+    },
+  },
+];
+
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
   ...boundaries,
+  ...unusedVars,
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
 ]);
 
