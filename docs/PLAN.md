@@ -222,3 +222,23 @@ Phases 3–8 each end in a deployable state. Nothing after phase 2 blocks anythi
   tools/resources/prompts, and snapshot-asserts the result.
 - **Accessibility + visual smoke** via the `/browse` skill against a preview deploy.
 - **Auth negative tests** — admin tools must 401 anonymous and 403 on missing scope.
+
+---
+
+## 11. Developer tooling (added after review — this was a gap)
+
+An API nobody can poke at by hand is an API nobody debugs. But a Postman collection sitting in
+someone's desktop app is a fourth source of truth that silently drifts from the other three,
+which is the exact failure this project exists to avoid.
+
+So: **the API client lives in the repo and is generated from the OpenAPI document.**
+
+- `api/*.http` — request files committed alongside the code, runnable from VS Code REST Client
+  or JetBrains HTTP Client. Reviewed in PRs like any other file. Regenerated from
+  `/openapi.json`, so a drifted request is a failing diff, not a silent stale bookmark.
+- `npx @modelcontextprotocol/inspector https://albertyan.dev/mcp` — the MCP equivalent of
+  Postman. This is the tool for exercising tools/resources/prompts by hand.
+- `npm run check` — typecheck + lint + build in one command; the same gate CI runs.
+- Bruno (not Postman) if a GUI is wanted later: its collections are plain files that live in
+  the repo, which preserves the single-source-of-truth property. Postman's cloud-stored
+  collections do not.
