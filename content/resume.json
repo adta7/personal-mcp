@@ -1,0 +1,21 @@
+{
+  "roles": [
+    {
+      "org": "PLACEHOLDER Company",
+      "title": "PLACEHOLDER Title",
+      "startedOn": "2024-01",
+      "summary": "PLACEHOLDER — what the role was, in one or two sentences.",
+      "highlights": [
+        "PLACEHOLDER — an outcome, not a responsibility. What changed because you were there."
+      ],
+      "stack": ["TypeScript"]
+    }
+  ],
+  "education": [
+    {
+      "institution": "PLACEHOLDER University",
+      "credential": "PLACEHOLDER — B.S. Something",
+      "endedOn": "2023-05"
+    }
+  ]
+}

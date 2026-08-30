@@ -1,0 +1,9 @@
+{
+  "name": "Albert Yan",
+  "headline": "PLACEHOLDER — one line on who you are professionally.",
+  "location": "PLACEHOLDER — City, State",
+  "summary": "PLACEHOLDER. A few sentences of background: what you work on, what you care about, what you are good at. This is the long-form counterpart to the headline, and it is what an agent quotes when someone asks 'tell me about Albert'.",
+  "links": [
+    { "label": "GitHub", "url": "https://github.com/adta7", "kind": "github" }
+  ]
+}
