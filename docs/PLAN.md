@@ -3,7 +3,12 @@
 **Goal:** a personal homepage that is simultaneously a website, a versioned REST API, and a
 remote MCP server — where all three are *renderings of one content graph*, not three codebases.
 
-Status: DRAFT — awaiting approval. Nothing built yet.
+**Status (2026-08-30).** Phases 0–2 are **built, pushed, and green in CI**
+([adta7/personal-mcp](https://github.com/adta7/personal-mcp)): Next.js 16 + strict TypeScript,
+the Zod contract layer, the build-time content validator, framework-free resolvers, 16 tests.
+Phases 3–8 are **not built** and remain cheap to change. This document was revised after a
+multi-model architecture review (§15); the review's verdict was *approve with major changes*,
+and the changes are incorporated below rather than appended.
 
 ---
 
@@ -14,231 +19,384 @@ sync within a month. The thing that makes this project worth building well is a 
 
 > **One content graph. One contract. Three renderers. Zero duplication.**
 
-Everything else in this plan is machinery in service of that rule.
-
 ```
-content/  →  core/  →  adapters/{web, rest, mcp, agent}
+content/  →  core/  →  adapters/{web, rest, mcp}
 (data)      (domain)   (presentation)
 ```
 
-Dependency direction is one-way and **enforced by lint**, not by discipline:
-`adapters` may import `core`; `core` may import `content`; nothing imports backwards.
-If a fact about Albert can be reached three ways, it is resolved by exactly one function.
+Dependency direction is one-way and **enforced by lint**, not by discipline. If a fact about
+Albert can be reached three ways, it is resolved by exactly one function.
+
+This part of the design survived review intact and is the reason the rest of the plan can be
+cut aggressively without damage: the read core is sound, so everything bolted onto it is
+optional.
 
 ---
 
-## 2. Why this shape (the decision record)
+## 2. Decision record
 
 | Decision | Chosen | Rejected | Why |
 |---|---|---|---|
-| Content store | Typed files in git (`content/`) | Postgres, headless CMS | Git gives free versioning, diffs, review, revert, and offline edit. A personal homepage has ~200 facts that change ~weekly. A database here buys nothing and costs migrations, secrets, and a second source of truth. |
-| Contract definition | Zod schemas, once | Hand-written OpenAPI + separate TS types + separate MCP schemas | Zod is the only artifact that can *simultaneously* be the TS type, the build-time validator, the OpenAPI 3.1 doc, and the MCP tool `inputSchema`. Verified: `mcp-handler` accepts Zod directly; `zod-openapi` emits 3.1 from the same objects. This is the highest-leverage decision in the plan. |
-| Admin writes | Commit to git via GitHub API | Write to a DB | Keeps one source of truth. Every agent-initiated edit becomes a real commit with an author and a diff you can revert. Cost: ~40s write latency (a deploy). Acceptable — you do not update a bio 50×/hour. |
-| Inbound messages | Separate durable store, never git | Same path as admin writes | Untrusted input must never enter the repo. Physically separate lane, separate trust level. |
-| MCP transport | Remote streamable HTTP **and** a published stdio *proxy* | stdio copy of the server | A stdio package that re-implements the content goes stale. A ~60-line stdio↔HTTP proxy cannot: it has no content of its own. Broad client compat, zero duplication. |
-| API versioning | Frozen `/api/v1/*` | Unversioned | Once an agent hardcodes your endpoint, it is a contract. Version it from commit one; it costs one path segment. |
-
-**Where I'd push back on myself:** §7 (git-commit writes) is the part most at risk of being
-over-engineering. It is deliberately isolated — nothing else in the system depends on it —
-so it can be deferred to after launch without touching a line of §4–§6.
+| Content store | Typed files in git | Postgres, headless CMS | ~200 facts changing ~weekly. Git already gives versioning, diffs, review, revert. A DB buys nothing and costs migrations, secrets, and a second source of truth. |
+| Contract | Zod schemas, once | Hand-written OpenAPI + separate types + separate MCP schemas | Zod is simultaneously the TS type, the build validator, the OpenAPI 3.1 component, and the MCP `inputSchema`. Verified against current docs. Highest-leverage decision here. |
+| Admin writes | **Branch + PR, human-approved** | Direct commit to `main` | *Revised after review.* Direct commits let an authenticated tool create an invalid commit, report success while the live site is stale, or break prod via a failed redeploy. A PR gets CI validation and a preview URL before anything is live. |
+| Inbound messages | Separate store, never git, **deferred past v1** | Ship with launch | *Revised after review.* An unauthenticated public write on a personal site is the most likely production abuse vector. Read-only first. |
+| MCP transport | Remote Streamable HTTP | HTTP+SSE; stdio-only | SSE is deprecated as a transport in the current spec (2025-11-25 defines exactly `stdio` and Streamable HTTP). A stdio proxy is deferred behind a go/no-go criterion (§14). |
+| Human-URL representations | `.md` twin URLs + `/api/v1` JSON | `Accept:`-negotiated HTML routes | *Revised after review.* Negotiation on human URLs needs `Vary: Accept` and per-representation ETags to be CDN-safe; get it wrong and you serve Markdown to a browser or poison a cache. `.md` twins give ~90% of the benefit with none of the cache risk. |
+| API versioning | Frozen `/api/v1/*` + written deprecation policy (§10) | A path segment alone | A version number is not a policy. Agents cache schemas and hardcode behaviour. |
 
 ---
 
 ## 3. Stack
 
-- **Next.js 16, App Router, TypeScript strict** — RSC lets one resolver feed HTML and JSON.
-- **Vercel, Fluid Compute, Node 24** — MCP streaming needs a real Node runtime, not edge.
-- **Tailwind v4** for the page. Deliberately minimal; the site is text.
-- **Zod 4** (`zod`), **`zod-openapi`** (OpenAPI 3.1), **`mcp-handler`** (Vercel's MCP adapter),
-  **`@modelcontextprotocol/sdk`**.
-- **MDX** for prose content. `pnpm`. No database in v1.
+- **Next.js 16 App Router, TypeScript strict** (+ `noUncheckedIndexedAccess`) — RSC lets one
+  resolver feed both HTML and JSON.
+- **Vercel Fluid Compute, Node 24** — MCP Streamable HTTP needs a real Node runtime, not Edge.
+- **Tailwind v4.** The site is text; the design should be quiet.
+- **Zod 4**, **`zod-openapi`**, **`mcp-handler`** over the official MCP TypeScript SDK.
+- **npm** (pnpm is not installed on this machine).
+- **Markdown, not full MDX.** *Revised after review.* MDX is code-adjacent; arbitrary JSX and
+  imports in content that an authenticated tool may one day write is a build-time execution
+  surface we have no reason to accept. Front matter + CommonMark body, no component imports.
 
 ---
 
 ## 4. Repository layout
 
 ```
-content/                      # SOURCE OF TRUTH — humans and agents edit here
-  profile.json                # name, headline, links, location, pronouns
-  now.mdx                     # current focus + availability (front-matter typed)
-  experience.json             # roles, dates, scope, outcomes
-  education.json
-  projects/<slug>.mdx         # front-matter: title, summary, stack, links, dates, featured
-  writing/<slug>.mdx          # front-matter: title, date, tags, summary
+content/                    SOURCE OF TRUTH — validated at build, versioned by git
+  profile.json  resume.json  now.mdx  projects/<slug>.mdx  writing/<slug>.mdx
 
-src/
-  core/                       # DOMAIN — pure, framework-free, no Request/Response types
-    schema/                   # Zod: profile, project, post, role, now, message, errors
-      index.ts                #   → TS types, validators, OpenAPI, MCP input schemas
-    content/
-      load.ts                 # read + parse + VALIDATE at build; throws on bad content
-      hash.ts                 # stable content hash → ETag / Last-Modified
-    resolvers/                # the ONLY way anything reads content
-      profile.ts projects.ts resume.ts writing.ts now.ts search.ts
-    writes/
-      authored.ts             # schema-check → GitHub Contents API commit (allowlisted paths)
-      inbound.ts              # rate-limited append to message store + notify
-    auth/
-      verify.ts               # bearer → AuthInfo{clientId, scopes}. One swap point for OAuth.
+src/core/                   DOMAIN — pure. no Request/Response, no React. lint-enforced.
+  schema/                   Zod → TS types + validator + OpenAPI + MCP inputSchemas   ✅ built
+  content/load.ts           read + validate; fails the build on bad content            ✅ built
+  content/hash.ts           stable hash → ETag                                         ✅ built
+  resolvers/                the only read path                                         ✅ built
+  briefs/                   composed, agent-facing views (§6c) — not raw entity dumps
+  auth/verify.ts            bearer → AuthInfo{clientId, scopes}; one swap point for OAuth
+  writes/                   deferred (§8)
 
-  app/
-    (site)/                   # WEB ADAPTER — RSC pages
-      page.tsx  projects/[slug]/page.tsx  writing/[slug]/page.tsx  resume/page.tsx  now/page.tsx
-      api-docs/page.tsx       # human-readable "how to talk to this site as a machine"
-    api/v1/                   # REST ADAPTER — thin: parse → resolver → serialize
-      route.ts                #   hypermedia root; links every endpoint
-      profile/ projects/ projects/[slug]/ resume/ writing/ writing/[slug]/ now/ search/
-      messages/route.ts       #   POST only, public, rate-limited
-      admin/                  #   authenticated mutations
-    api/mcp/route.ts          # MCP ADAPTER — tools + resources + prompts
-    openapi.json/route.ts     # generated, never hand-edited
-    llms.txt/route.ts
-    llms-full.txt/route.ts
-    .well-known/mcp.json/route.ts
-    .well-known/oauth-protected-resource/route.ts
+src/app/
+  (site)/                   WEB ADAPTER — RSC pages
+  api/v1/                   REST ADAPTER — thin: parse → resolve → serialize
+  api/mcp/route.ts          MCP ADAPTER — tools + resources
+  openapi.json/  llms.txt/  sitemap.xml/  .well-known/mcp.json/
 
-tests/
-  contract/parity.test.ts     # ← the test that keeps the promise (see §10)
-packages/
-  mcp-stdio-proxy/            # published npm pkg; ~60 lines, zero content
+tests/contract/parity.test.ts    the test that keeps the promise (§12)
 ```
 
 ---
 
-## 5. The contract layer (§the crux)
+## 5. The contract layer
 
 One Zod object per entity, annotated with `.meta({ id, description, example })`. From that
-single definition we derive **five** artifacts mechanically:
+single definition, five artifacts are derived mechanically: TypeScript types; build-time
+content validation; `/openapi.json`; MCP tool `inputSchema`s; and public JSON Schema.
 
-1. TypeScript types — `z.infer<typeof Project>`
-2. Build-time content validation — a malformed `content/` file **fails the build**, not production
-3. `/openapi.json` — `createDocument({ openapi: '3.1.0', paths: … })`
-4. MCP tool `inputSchema` — passed straight into `server.registerTool`
-5. `/api/v1/schema/<entity>` — raw JSON Schema, so an agent can self-orient
-
-The `.describe()` text on every field is not decoration: it becomes the OpenAPI description
-*and* the text an LLM reads to decide how to call the tool. Field descriptions are written
-for a model, not for a developer.
+Field descriptions are written **for a model to read**, because they become both the OpenAPI
+description and the text an LLM uses to decide how to call a tool.
 
 ---
 
 ## 6. Read surfaces
 
 ### 6a. REST (`/api/v1`)
-- Hypermedia root at `/api/v1` linking every resource — an agent needs one URL to discover all.
-- `profile`, `projects`, `projects/{slug}`, `resume` (+ `?format=jsonresume`), `writing`,
-  `writing/{slug}`, `now`, `search?q=`.
-- **Conditional GETs:** ETag from the content hash + `Cache-Control: s-maxage, stale-while-revalidate`.
-  A polling agent gets `304 Not Modified` and costs nothing.
-- **Errors:** RFC 9457 `application/problem+json`. No stack traces, no internal IDs.
-- **CORS:** `*` on read GETs only; writes are same-origin/bearer.
-- `Link: </openapi.json>; rel="service-desc"` header on every API response.
 
-### 6b. Content negotiation on human URLs
-`GET /projects/foo` returns HTML to a browser, JSON to `Accept: application/json`, and raw
-Markdown to `Accept: text/markdown`. Plus `.md` twin URLs (`/projects/foo.md`) for agents that
-cannot set headers. Same URL, three representations — this is what "API-accessible website"
-should actually mean, rather than a parallel `/api` universe.
+Hypermedia root linking every resource. `profile`, `projects`, `projects/{slug}`, `resume`
+(+ `?format=jsonresume`), `writing`, `writing/{slug}`, `now`, `search?q=`.
 
-### 6c. MCP (`https://<domain>/mcp` → `/api/mcp`)
-- **Tools (anonymous):** `get_profile`, `list_projects`, `get_project`, `get_resume`,
-  `get_now`, `list_writing`, `get_post`, `search`, `leave_message`.
-- **Resources:** `albert://profile`, `albert://projects/{slug}`, `albert://resume`,
-  `albert://now`, `albert://writing/{slug}` — so a client can attach context *without*
-  burning a tool call. Most personal MCP servers skip resources; that is the low-hanging-fruit
-  version and it makes them worse.
-- **Prompts:** `introduce_albert`, `screen_for_role`, `draft_outreach` — reusable, parameterized.
-- Add: `claude mcp add --transport http albert https://<domain>/mcp`
+**Cache correctness is a first-class requirement, not a header we sprinkle on:**
 
-### 6d. Discoverability for machines
-`/llms.txt` + `/llms-full.txt`, `/openapi.json`, `/.well-known/mcp.json`, JSON-LD `Person`
-+ `CreativeWork` in the HTML head, `robots.txt` permitting agent crawlers, and a human
-`/api-docs` page that shows the four ways to consume the site side by side.
+- ETag derived from the content hash **of the specific representation** — JSON and Markdown
+  of the same resource must never share a tag.
+- `Vary: Accept` wherever more than one representation is served from one URL.
+- Search responses are query-sensitive: `q` participates in the cache key.
+- Authenticated responses are `Cache-Control: private, no-store`. Never shared.
+- `Cache-Control: public, s-maxage=300, stale-while-revalidate=86400` on reads, so a polling
+  agent costs nothing and a deploy invalidates cleanly.
+- Errors are RFC 9457 `application/problem+json`. CORS `*` on read GETs only.
+
+### 6b. Markdown twins
+
+`/projects/foo.md` returns the raw Markdown source of `/projects/foo`. Static, separately
+cacheable, trivially correct — and it does not require getting `Vary` right on the pages real
+humans load. Content negotiation on HTML routes is explicitly **not** being built (§14).
+
+### 6c. MCP (`https://albertyan.dev/mcp`)
+
+**The design rule, adopted from the review: an MCP tool must do a job that is better than
+reading `/openapi.json` or `llms.txt`.** A tool that merely mirrors a REST endpoint earns
+nothing — the agent could have made the HTTP call. So the tool set is organized around what
+an agent is actually *trying to accomplish*, and composed views live in `src/core/briefs/`.
+
+| Tool | The agent's job | Why it beats a REST call |
+|---|---|---|
+| `get_availability` | "Is Albert open to work, and is this current?" | The single highest-value question. Returns status enum + `updatedOn` so staleness is visible. One call, no parsing. |
+| `get_recruiter_packet({ role_description? })` | "Brief me on this person for this role." | Composes profile + availability + resume + the most relevant projects + contact policy into **one** response. Replaces five round trips and a synthesis step. |
+| `find_relevant_experience({ role_description })` | "Has he done anything like this?" | Ranks projects and roles against a described role and returns matches **with source URLs**, so the calling model cites rather than invents. |
+| `answer_about_albert({ question })` | "What does his site say about X?" | Retrieval, not generation: returns the passages plus citations and lets the caller compose. Deliberately does not answer in Albert's voice. |
+| `get_contact_policy` | "Should I reach out, and how?" | States what Albert wants to hear about and what he doesn't. Reduces bad outreach, which is the actual goal. |
+| `search`, `list_projects`, `get_project` | escape hatches | Kept deliberately thin for the cases the composed tools don't cover. |
+
+**Resources** — each with a specified representation, because a resource nothing can predict
+is a resource nothing will use:
+
+| URI | MIME | Notes |
+|---|---|---|
+| `albert://profile` | `application/json` | Structured; schema-identical to `/api/v1/profile`. |
+| `albert://resume` | `application/json` | |
+| `albert://now` | `text/markdown` | Prose; carries `updatedOn` in front matter. |
+| `albert://projects/{slug}` | `text/markdown` | Resource *template*, listable. |
+| `albert://writing/{slug}` | `text/markdown` | |
+
+Every resource carries `lastModified` and a canonical `sourceUrl`. Bodies are capped at 64 KB;
+anything larger is truncated with an explicit marker rather than silently cut.
+
+**Prompts are cut from the initial release** (§14).
+
+### 6d. Discoverability
+
+`/llms.txt`, `/openapi.json`, `/.well-known/mcp.json`, `sitemap.xml`, canonical URLs, and
+JSON-LD `Person` + `CreativeWork` — **generated from the resolvers and covered by the parity
+test**, so structured data cannot drift from the content graph.
+
+`llms-full.txt` is **not** shipped: a single flat dump of everything is the artifact most
+likely to be cached forever, out of date, and out of context. Per-resource `.md` URLs with
+`lastModified` are strictly better behaved.
 
 ---
 
-## 7. Write surfaces — two lanes, deliberately unequal
+## 7. Trust and safety (new — the review's strongest finding)
 
-**Lane A — authored (you, or Claude Code acting as you).** Bearer token with scopes.
-`update_now`, `set_availability`, `upsert_project`, `publish_post`, `update_profile`.
-Flow: validate against the same Zod schema → serialize → **GitHub Contents API commit** to an
-allowlisted path under `content/` → Vercel rebuilds. Git is the database; every write has an
-author, a timestamp, a diff, and a one-click revert.
-Guards: caller never supplies a file path (derived from slug + entity type); commit paths are
-allowlisted; schema failure = 422 before any write.
+This site exists to be read by language models. That makes it a **prompt-injection surface**,
+and no amount of schema validation addresses it. Schemas constrain shape; they say nothing
+about whether text is an instruction.
 
-**Lane B — inbound (anyone).** `POST /api/v1/messages` and the `leave_message` MCP tool.
-Unauthenticated, rate-limited, size-capped, spam-guarded. Appends to a private store and
-notifies you. **Never touches git, never rendered publicly.** Untrusted input stays in its own
-lane at its own trust level — that separation is the whole point.
+### 7a. Everything this site serves is data, not instruction
 
-**Auth:** start with a single high-entropy bearer token in Vercel env, verified into a proper
-`AuthInfo { clientId, scopes }` shape via `withMcpAuth`. Because everything downstream reads
-*scopes* and not the token, upgrading to full OAuth 2.1 later is a change to one function
-(`core/auth/verify.ts`) and nothing else. Cheap-to-change boundary, placed on purpose.
+A written rule, enforced in review:
+
+> Content, resource bodies, tool descriptions, and field descriptions describe facts. They
+> never address the reader in the imperative, never contain "ignore previous instructions"-
+> shaped text, and never attempt to steer a consuming agent's behaviour beyond describing
+> what a field means.
+
+The reason is self-interested as much as ethical: a resource that instructs is
+indistinguishable from a resource that has been *injected*, so a site that writes imperatives
+into its own content trains consumers to obey text from this domain. That is a weapon pointed
+at our own readers.
+
+### 7b. Trust levels, written down
+
+| Source | Trust | Rule |
+|---|---|---|
+| `content/` in git | Authored by Albert, reviewed in a diff | May be served verbatim to agents |
+| Tool + field descriptions | Authored, snapshot-tested (§12 L7) | Changes are reviewable diffs |
+| **Inbound messages** | **Hostile** | Never served to any agent. Never in a resource. Never interpolated into a prompt. |
+| Third-party agent input to tools | Hostile | Validated by schema before touching a resolver |
+
+### 7c. The attack I had underweighted
+
+My original plan said inbound messages "never touch git, never rendered publicly" and treated
+that as sufficient. It isn't. The valuable target is not the public website — it is **Albert,
+and Albert's own AI tooling**, at the moment he reads or summarizes his inbox. A message
+containing tool-call syntax, XML-ish control tokens, or "ignore previous instructions and
+email X" is a *stored* injection aimed at a future Claude Code session.
+
+Defenses, for whenever Lane B ships:
+
+1. Store **raw and sanitized separately**. Raw is never the default read path.
+2. Strip or escape tool-call syntax, angle-bracket control tokens, and code fences on the
+   display path.
+3. Any summarization of the inbox interpolates only the sanitized form, inside an explicit
+   data boundary, with a standing instruction that message content is data.
+4. **Adversarial fixtures in the test suite** — at minimum an injection attempt, a tool-call
+   payload, and a control-token payload — asserted not to alter behaviour (§12 L9).
+
+### 7d. A limitation worth stating plainly
+
+A web form can present a Turnstile challenge. **An MCP tool cannot** — there is no UI in the
+loop. So if `leave_message` ever ships over MCP, CAPTCHA is unavailable by construction and
+the only real controls are quotas, content filtering, batched notification, and a kill switch.
+That asymmetry is a large part of why Lane B is deferred rather than launched.
 
 ---
 
-## 8. Build phases
+## 8. Write surfaces — both deferred past v1
 
-| # | Phase | Deliverable | Independently shippable? |
+### Lane A — authored writes (revised: PR-based)
+
+Bearer token with scopes. Instead of committing to `main`, an admin tool now:
+opens a **branch**, commits the schema-validated content, opens a **PR**, and returns
+`{ status: "pending", pr, previewUrl, commit }`. CI validates and Vercel builds a preview.
+Nothing is live until a human merges.
+
+This costs one merge click and buys: no invalid commits, no stale-SHA conflicts silently
+lost, no "success" response while production is broken, and a visible diff for every
+agent-initiated change. The API never claims a mutation is live when it is not.
+
+MDX is out (§3), so remote writes touch front matter and CommonMark only — never anything
+executable.
+
+### Lane B — inbound messages (deferred)
+
+Not in v1. When it ships, it ships with numbers rather than adjectives:
+
+- **10 req/min per IP** on reads; **3/hour per IP** and **20/day globally** on `leave_message`.
+- `@upstash/ratelimit` sliding window; `429` as RFC 9457 with `Retry-After`.
+- 5 KB body cap enforced by the schema, so the limit is in the contract the client reads.
+- Notifications batched hourly, never per-message — otherwise the endpoint is a paging tool.
+- 90-day retention, then deletion.
+- `MESSAGES_ENABLED=false` kill switch, honoured without a deploy.
+- Web form gets Turnstile. MCP cannot (§7d).
+
+**Until then, contact is a `mailto:` link and `get_contact_policy`.** That is not a
+compromise; for a personal homepage it is very likely the correct permanent answer.
+
+---
+
+## 9. Operations
+
+**Observability.** Structured JSON logs with a request ID on every REST and MCP call: route
+or tool name, status, duration, and — for MCP — client name and protocol version, since
+transport incompatibility is the failure mode CI cannot catch. Inputs are logged truncated
+and never for authenticated write bodies.
+
+**Kill switches**, environment-driven and effective without a deploy: `MCP_ENABLED`,
+`MESSAGES_ENABLED`, `ADMIN_WRITES_ENABLED`. Anything public and abusable must be turnable off
+faster than a build takes.
+
+**Cost.** Target: **$0/month** beyond the domain. Everything is on free tiers, and the read
+surface is static-generated with long `s-maxage`, so agent polling hits the CDN rather than a
+function. Vercel spend alert at $5 — for a personal homepage, an unexpected bill is a bug
+report. The first thing disabled under abuse is `MESSAGES_ENABLED`, then `MCP_ENABLED`.
+
+**Failure modes** the plan now names: a Vercel cold start on first MCP `initialize`; GitHub
+API failure mid-PR (returns `pending` with the error, never `success`); Upstash unavailable
+(fail **closed** on writes — dropping a message beats accepting an unlimited number).
+
+---
+
+## 10. Versioning and deprecation policy
+
+A path segment is not a policy.
+
+**Non-breaking** (ships freely): adding a field, adding an endpoint, adding a tool or
+resource, loosening validation.
+**Breaking** (requires `v2`): removing or renaming a field, tightening validation, changing a
+type, changing an enum member, removing a tool or resource.
+
+**MCP manifests are contracts too.** A tool's `description` is the text a model uses to
+decide whether to call it, so rewording it changes agent behaviour with no code change. Tool
+names, descriptions, and input schemas are therefore snapshot-tested (§12 L7) and reviewed as
+API changes.
+
+`v1` is supported for **12 months** after a `v2` exists. Deprecations announce via a
+`Deprecation` header and a `Sunset` date, plus `CHANGELOG.md`.
+
+---
+
+## 11. Build phases
+
+Reordered per the review: **the homepage proves itself before the machine surfaces do.**
+
+| # | Phase | Ships | State |
 |---|---|---|---|
-| 0 | Scaffold | Next 16 + TS strict + Tailwind + lint boundary rule + CI | — |
-| 1 | Contract + content | Zod schemas, `content/` populated with real facts, loader that fails the build on bad data | — |
-| 2 | Resolvers | `core/resolvers/*` fully unit-tested with zero web dependencies | — |
-| 3 | Web | The actual homepage. Accessible, fast, dark/light. | ✅ ship |
-| 4 | REST | `/api/v1/*` + ETags + `/openapi.json` + problem+json | ✅ ship |
-| 5 | MCP read | tools + resources + prompts at `/mcp` | ✅ ship |
-| 6 | Discovery | llms.txt, well-known, JSON-LD, `.md` twins, `/api-docs` | ✅ ship |
-| 7 | Writes | bearer auth, Lane A git commits, Lane B message store | ✅ ship |
-| 8 | stdio proxy | `npx @albertyan/mcp` published | ✅ ship |
+| 0 | Scaffold, strict TS, lint boundaries, CI | — | ✅ **done** |
+| 1 | Zod contract + content validator | — | ✅ **done** |
+| 2 | Resolvers + parity harness | — | ✅ **done** |
+| 3 | **The website.** Real content, semantic HTML, a11y, SEO, JSON-LD, sitemap | ✅ | next |
+| 4 | REST `/api/v1` read-only + OpenAPI + cache correctness | ✅ | |
+| 5 | **MCP read-only** — agent-job tools + resources. No prompts, no writes | ✅ | |
+| 6 | Discovery: `llms.txt`, `.well-known/mcp.json`, `.md` twins | ✅ | |
+| 7 | Observability + kill switches | ✅ | |
+| 8 | *(deferred)* Lane A PR-based admin writes | — | on demand |
+| 9 | *(deferred)* Lane B messages, prompts, stdio proxy | — | §14 criteria |
 
-Phases 3–8 each end in a deployable state. Nothing after phase 2 blocks anything else.
-
----
-
-## 9. What I need from you before phase 0
-
-1. **Domain** — `albertyan.dev`? Something else? (Affects canonical URLs baked into MCP/JSON-LD.)
-2. **GitHub repo** name + public or private. Public is better here: the repo becomes part of the
-   portfolio and makes Lane A commits legible. `gh` is installed and authed.
-3. **Message store for Lane B** — Upstash Redis (best: durable, rate-limit primitives built in),
-   Vercel Blob (fewer vendors), or email-only via Resend (simplest, not queryable). My pick: Upstash.
-4. **`vercel` CLI is not installed.** Run `npm i -g vercel` when convenient — needed for
-   `vercel env pull` / `vercel deploy` from here.
-5. **Your actual content.** I can scaffold the schema with placeholders and you fill it in, or
-   you paste a résumé/LinkedIn export and I structure it. The latter is faster and better.
+Phase 3 has concrete acceptance criteria, not adjectives: semantic landmarks, full keyboard
+navigation, visible focus, AA contrast in both themes, `prefers-reduced-motion` honoured,
+canonical + OG metadata, valid structured data, Lighthouse a11y ≥ 95.
 
 ---
 
-## 10. How we verify it actually works
+## 12. Verification
 
-- **Content validation in CI** — bad content breaks the build, never production.
-- **Parity test (the one that matters):** for every entity, assert that the HTML page, the REST
-  JSON, and the MCP tool output all derive from the same resolver call. This is the automated
-  guarantee that the three surfaces cannot drift. If this test passes, the core promise holds.
-- **OpenAPI lint** (`redocly lint`) + a test asserting every documented path returns 2xx.
-- **Live MCP handshake test** — a script that connects to the deployed endpoint, lists
-  tools/resources/prompts, and snapshot-asserts the result.
-- **Accessibility + visual smoke** via the `/browse` skill against a preview deploy.
-- **Auth negative tests** — admin tools must 401 anonymous and 403 on missing scope.
+| # | Layer | Asserts | When |
+|---|---|---|---|
+| 1 | Unit | Every resolver's output re-validates under its own schema | CI ✅ |
+| 2 | **Parity** | HTML, REST, MCP, **and JSON-LD** all derive from the same resolver call | CI |
+| 3 | OpenAPI lint | Valid 3.1; no undescribed operations | CI |
+| 4 | **Schemathesis** | No endpoint 500s or violates its declared schema under generated input | post-deploy |
+| 5 | HTTP semantics | ETag → `304`; `Vary`; per-representation tags; `problem+json`; no auth caching | CI |
+| 6 | MCP conformance | A real client over Streamable HTTP can `initialize`, list, and call every tool | post-deploy |
+| 7 | **MCP contract snapshot** | Tool names, descriptions, and schemas do not change silently | CI |
+| 8 | Auth negatives | `401` anonymous, `403` wrong scope, RFC 9728 metadata present | CI |
+| 9 | **Adversarial** | Injection fixtures do not alter tool behaviour; oversized input rejected by contract | CI |
+| 10 | E2E + a11y | Renders, keyboard-navigable, contrast passes | post-deploy |
+
+### On FastAPI
+
+FastAPI is a Python **web framework**, not a testing tool — an alternative to Next.js route
+handlers, not a complement. We are not using it (§2: a Python server cannot call our
+TypeScript resolvers, so it would reimplement the content layer or call our own API over
+HTTP; either kills the single-source-of-truth property).
+
+**But that ecosystem produced one tool worth stealing outright.** **Schemathesis** reads
+`/openapi.json` and property-test-fuzzes every endpoint it describes, asserting the server
+never 500s and never violates its own declared schema. It works against any HTTP API
+regardless of implementation language. It is disproportionately valuable here because our
+OpenAPI document is *generated from the same Zod schemas the handlers validate with* — so it
+tests the real contract, and every endpoint we add is fuzzed the moment it appears in the
+spec, with no test written by hand.
+
+**Layer 6 must run against the deployed URL.** The entire risk of a remote MCP server lives
+in the transport — sessions, streaming, headers, cold starts. A test that stubs the transport
+tests nothing that can break in production.
 
 ---
 
-## 11. Developer tooling (added after review — this was a gap)
+## 13. Developer tooling
 
-An API nobody can poke at by hand is an API nobody debugs. But a Postman collection sitting in
-someone's desktop app is a fourth source of truth that silently drifts from the other three,
-which is the exact failure this project exists to avoid.
-
-So: **the API client lives in the repo and is generated from the OpenAPI document.**
-
-- `api/*.http` — request files committed alongside the code, runnable from VS Code REST Client
-  or JetBrains HTTP Client. Reviewed in PRs like any other file. Regenerated from
-  `/openapi.json`, so a drifted request is a failing diff, not a silent stale bookmark.
 - `npx @modelcontextprotocol/inspector https://albertyan.dev/mcp` — the MCP equivalent of
-  Postman. This is the tool for exercising tools/resources/prompts by hand.
-- `npm run check` — typecheck + lint + build in one command; the same gate CI runs.
-- Bruno (not Postman) if a GUI is wanted later: its collections are plain files that live in
-  the repo, which preserves the single-source-of-truth property. Postman's cloud-stored
-  collections do not.
+  Postman; the way tools and resources get exercised by hand.
+- **One hand-written `api/smoke.http`**, not a generator. *Revised after review:* building a
+  request-file generator for a one-person project is ceremony that will never repay itself.
+- `npm run check` — typecheck, lint, tests, build. The gate CI runs.
+- `npm run test:live -- <url>` — layers 4, 6, 10 against a preview deployment.
+
+---
+
+## 14. Explicitly not building (and what would change that)
+
+Cutting these is the point of the review, not a concession to it.
+
+| Cut | Why | Ships if |
+|---|---|---|
+| `Accept:`-negotiated HTML routes | `Vary`/ETag cache complexity for marginal gain; `.md` twins get ~90% of it safely | never, most likely |
+| `llms-full.txt` | A flat dump is the artifact most likely to be cached stale and out of context | never |
+| MCP **prompts** | Client-rendered templates; dead code unless a target client surfaces Prompt UI, and `screen_for_role` under the authority of `albertyan.dev` is a reputational risk | a target client exposes prompts **and** the text is reviewed for overclaiming |
+| **stdio proxy npm package** | A permanent supply-chain and maintenance obligation for marginal compat | one real user needs stdio |
+| Generated `.http` files | Ceremony | drift becomes a real, observed problem |
+| Lane B messages | §7d: no CAPTCHA possible over MCP; `mailto:` is likely the correct permanent answer | outreach volume makes email insufficient |
+| Lane A admin writes | Local `git push` already works and is strictly safer | editing from a phone or a Claude session becomes a real need |
+| A database | Nothing in the read path needs one | content stops being ~200 mostly-static facts |
+
+---
+
+## 15. Review record
+
+Reviewed 2026-08-30 by a multi-model council (`review_with_orchestra`): Gemini 2.5 Pro,
+GPT-5.5, Claude Sonnet 4.6. Verdict: **approve with major changes**. Transcript in
+`.orchestrator/runs/2026-08-30_9e0b6f799854/` (gitignored).
+
+Accepted: the trust/safety model (§7) and the stored-injection-against-the-author attack;
+deferring both write lanes; PR-based rather than direct-commit admin writes; MCP tools as
+agent jobs rather than REST mirrors; cutting prompts, `llms-full.txt`, the stdio package, and
+the `.http` generator; concrete rate limits, observability, cost ceiling, and deprecation
+policy; JSON-LD in the parity test; Markdown instead of MDX; homepage before machine surfaces.
+
+**Reversed from my own earlier argument:** I advocated `Accept:`-based content negotiation on
+human URLs as the elegant answer. The review is right that it is a cache-correctness footgun
+disproportionate to its benefit, and `.md` twins are the better trade.
+
+Not adopted: nothing material. The read architecture (§1) was endorsed unchanged.
