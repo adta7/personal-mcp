@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { IsoDate, Markdown, NonEmpty, Slug } from "./primitives";
+import { Markdown, NonEmpty, Slug, YearMonth } from "./primitives";
 import { Link } from "./profile";
 
 /** The part an author writes by hand, in MDX front matter. */
@@ -21,8 +21,10 @@ export const ProjectFrontmatter = z.object({
     description:
       "Lifecycle stage. `archived` means intentionally no longer maintained -- not that it failed.",
   }),
-  startedOn: IsoDate,
-  completedOn: IsoDate.optional().meta({
+  // Month precision, like employment spans: a day-level project start date implies more
+  // precision than anyone actually means, and invites invented specificity.
+  startedOn: YearMonth,
+  completedOn: YearMonth.optional().meta({
     description: "Absent while a project is still `active`.",
   }),
   featured: z.boolean().default(false).meta({

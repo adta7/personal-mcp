@@ -1,0 +1,26 @@
+---
+title: "AI Orchestrator"
+summary: "A command-line council of language models that drafts independently, critiques against the original prompt rather than against each other's taste, and synthesizes by choosing and cutting instead of averaging."
+stack: ["Python", "Anthropic API", "OpenAI API", "Gemini API"]
+role: "Sole author"
+status: "shipped"
+startedOn: "2026-06"
+featured: true
+---
+
+Pasting one prompt into three models and feeding each answer back to the others catches real
+mistakes, but it is slow and easy to do inconsistently. This automates that loop: independent
+drafts in parallel, cross-critique grounded in the original prompt, an explicit extraction of
+what every draft missed, and a synthesis step that is instructed to *choose and cut* rather
+than average.
+
+The design decision that matters is the grounding rule. Models asked to critique each other
+tend to converge on style. Anchoring every critique to the original prompt keeps the question
+"does this answer what was asked" rather than "would I have written it this way."
+
+Every run is saved as structured JSON and readable Markdown, so the reasoning trail can be
+inspected afterward rather than trusted at the moment it scrolls past.
+
+This site's own architecture plan was reviewed by a version of this tool. The verdict was
+*approve with major changes*, and the changes were substantial — the strongest finding was an
+attack I had underweighted, and the review reversed one design argument I had defended.

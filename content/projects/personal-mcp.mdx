@@ -1,10 +1,10 @@
 ---
 title: "personal-mcp"
-summary: "My homepage, exposed simultaneously as a website, a REST API, and an MCP server — three renderings of one content graph."
+summary: "This site. One content graph rendered three ways — a website, a versioned REST API, and a remote MCP server — so an agent can query it directly instead of scraping it."
 stack: ["TypeScript", "Next.js", "Zod", "MCP", "Vercel"]
 role: "Sole author"
 status: "active"
-startedOn: "2026-08-29"
+startedOn: "2026-08"
 featured: true
 links:
   - label: "Source"
@@ -12,13 +12,20 @@ links:
     kind: "github"
 ---
 
-Most personal sites that claim to be "API-accessible" are a site plus a bolted-on `/api`
-folder that drifts out of sync within a month. This one is built so that drift is
-structurally impossible: `content/` holds the facts, `src/core/` resolves them, and the
-website, the JSON API, and the MCP server are three thin adapters over the same resolvers.
+Most sites that claim to be "API-accessible" are a website plus a bolted-on `/api` folder that
+drifts out of sync within a month. This one is built so drift is structurally impossible:
+`content/` holds the facts, `src/core/` resolves them, and the website, the JSON API, and the
+MCP server are three thin adapters over the same resolver functions. The dependency direction
+is enforced by a lint rule rather than by discipline, and a parity test asserts that all three
+surfaces derive from the same call.
 
-The dependency direction is enforced by ESLint rather than by discipline — `src/core`
-cannot import React or Next, so a fact can never be implemented twice.
+There is no database. Content is typed files in git, validated by Zod at build time, so
+malformed data fails CI instead of throwing in production. The same schema definition produces
+the TypeScript types, the content validator, the OpenAPI document, and the MCP tool input
+schemas.
 
-There is no database. Content is typed files in git, validated by Zod at build time, which
-means malformed data fails CI instead of throwing in production.
+Add it to a client:
+
+```
+claude mcp add --transport http albert https://albertyan.dev/mcp
+```

@@ -1,0 +1,55 @@
+---
+title: "Protein Design"
+summary: "A Python toolkit that folds sequences, simulates them, and docks them — built mainly to find out how much of what it reports can actually be trusted. Auditing its own evaluation changed the pipeline more than any modeling work did."
+stack: ["Python", "Boltz-2", "molecular dynamics", "DockQ", "MSA", "PDB"]
+role: "Sole author"
+status: "active"
+startedOn: "2026-07"
+featured: true
+---
+
+An orchestration layer over existing structure-prediction, molecular dynamics, and docking
+models — deliberately not an attempt to reimplement AlphaFold. It fetches and measures a
+structure, folds a sequence and grades it against field-standard metrics, prepares a
+simulatable system, runs dynamics, redocks a ligand, and scores a protein–protein interface
+with DockQ, all drivable from a desktop workbench.
+
+**Scope honesty first:** the pipeline produces *educational-grade* results. Simplified force
+fields, picosecond trajectories, hosted single models. It teaches the correct workflow and
+how to check it — not publishable numbers.
+
+That caveat is about the outputs. It is not about the following, which are findings about
+*evaluation* and do not depend on force-field quality.
+
+## What measuring it taught me
+
+**A date-based held-out test set is mostly not held out.** The standard protection against
+memorization is to test on structures released after a model's training cutoff. Measured
+against the PDB, 87% of post-cutoff entries have a ≥70%-identical pre-cutoff relative. Only
+**6.3% are genuinely unseen.** Most "held-out" evaluation is measuring interpolation.
+
+**An uncertain prediction is a distribution, not a structure.** Five identical requests for
+one complex returned DockQ scores from 0.030 to 0.501 — spanning three CAPRI quality classes.
+The model's own confidence ranking selected the *worst* of the five. Reporting a single
+structure from a stochastic sampler, with a confidence score used to pick it, can be actively
+misleading.
+
+**I was wrong about what was missing, and the ablation said so.** Nine of fourteen complexes
+failed outright, and the cause turned out to be the pipeline rather than the model: adding a
+per-chain MSA recovered five, four of them to CAPRI `high` (one moved 0.079 → 0.927). I had
+assumed *paired* MSAs were the missing capability. An ablation recovered the identical five
+targets **without** pairing, reached a higher class, and was 14× more stable.
+
+**Most of the benchmark's "model failures" were my own target selection.** Five of fourteen
+complexes were unanswerable as specified — two covalent conjugates, a molecular-glue ternary
+complex, a disulfide-stapled pair, a homodimer. Audited down to well-posed targets, 9 of 9
+succeed. And one remaining ceiling turned out to be a missing input rather than a hard
+problem: one chain of 9CU8 has no retrievable homolog at all, caught by an adequacy gate
+*before* folding, so its score was never a measurement of difficulty.
+
+## How it is built
+
+Every phase is pre-registered: a freeze script resolves every sequence, hash, threshold, and
+decision rule into a validated JSON manifest **before** an API call is spent, and the runner
+refuses to proceed on a hash mismatch. Decisions live in 37 ADRs. Two planned features were
+costed and cancelled by arithmetic rather than built.

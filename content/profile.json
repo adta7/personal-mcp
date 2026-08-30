@@ -1,8 +1,8 @@
 {
   "name": "Albert Yan",
-  "headline": "PLACEHOLDER — one line on who you are professionally.",
-  "location": "PLACEHOLDER — City, State",
-  "summary": "PLACEHOLDER. A few sentences of background: what you work on, what you care about, what you are good at. This is the long-form counterpart to the headline, and it is what an agent quotes when someone asks 'tell me about Albert'.",
+  "headline": "Biochemistry graduate building computational tools for structural biology — and auditing how they get evaluated.",
+  "location": "Seattle, WA",
+  "summary": "I studied biochemistry at the University of Washington, entering through the Robinson Center for Young Scholars after tenth grade. Alongside the degree I spent about 2,500 hours in direct patient care as a CNA and a one-on-one caregiver, and worked in an artificial kidney dialysis lab on the design of a portable dialysis system.\n\nI now write software to study proteins computationally. Most of what I have learned has come from measuring my own methods rather than from the pipelines themselves: that a date-based held-out test set is mostly not held out, that an uncertain structure prediction is a distribution rather than a structure, and that a benchmark's apparent model failures are often failures of target selection. Those findings changed how the tooling works, and several of them contradicted what I expected going in.\n\nI am headed toward graduate work at the intersection of machine learning and biomedical systems.",
   "links": [
     { "label": "GitHub", "url": "https://github.com/adta7", "kind": "github" }
   ]

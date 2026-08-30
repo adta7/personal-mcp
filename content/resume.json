@@ -1,21 +1,70 @@
 {
   "roles": [
     {
-      "org": "PLACEHOLDER Company",
-      "title": "PLACEHOLDER Title",
-      "startedOn": "2024-01",
-      "summary": "PLACEHOLDER — what the role was, in one or two sentences.",
+      "org": "Artificial Kidney Dialysis Lab",
+      "title": "Undergraduate Researcher",
+      "location": "Seattle, WA",
+      "startedOn": "2026-03",
+      "endedOn": "2026-06",
+      "summary": "Second research term in the lab, returning to the portable dialysis system after the 2023 summer term.",
       "highlights": [
-        "PLACEHOLDER — an outcome, not a responsibility. What changed because you were there."
+        "Researched chronic kidney disease demographics and home dialysis utilization to inform the design target.",
+        "Worked on integrating interchangeable tubing and pumps, an oxygen bubble catch and detector, and a separate waste line into a portable dialysis system."
       ],
-      "stack": ["TypeScript"]
+      "stack": ["Device design", "Clinical research"]
+    },
+    {
+      "org": "AllyMS Home Care / John Hancock Insurance",
+      "title": "One-on-One Caregiver",
+      "location": "Seattle, WA",
+      "startedOn": "2023-12",
+      "endedOn": "2024-12",
+      "summary": "Roughly 500 hours of in-home care for an elderly client.",
+      "highlights": [
+        "Sole caregiver on shift, responsible for safety, daily living support, and companionship."
+      ],
+      "stack": []
+    },
+    {
+      "org": "Mirabella Seattle",
+      "title": "Certified Nursing Assistant",
+      "location": "Seattle, WA",
+      "startedOn": "2023-08",
+      "endedOn": "2024-09",
+      "summary": "Roughly 2,000 hours of direct patient care in a senior living community.",
+      "highlights": [
+        "Activities of daily living: transfers, toileting, changing, showers, and feeding.",
+        "Provided emotional and spiritual support to residents and worked with clinical staff to keep the environment safe for healing and for aging in place."
+      ],
+      "stack": []
+    },
+    {
+      "org": "Artificial Kidney Dialysis Lab",
+      "title": "Undergraduate Researcher",
+      "location": "Seattle, WA",
+      "startedOn": "2023-06",
+      "endedOn": "2023-09",
+      "summary": "First research term on the portable dialysis system.",
+      "highlights": [
+        "Tested filtration efficiency of carbon filters using a chemical analyzer."
+      ],
+      "stack": ["Device design", "Analytical chemistry"]
     }
   ],
   "education": [
     {
-      "institution": "PLACEHOLDER University",
-      "credential": "PLACEHOLDER — B.S. Something",
-      "endedOn": "2023-05"
+      "institution": "University of Washington",
+      "credential": "B.S. Biochemistry",
+      "startedOn": "2021-09",
+      "endedOn": "2026-06",
+      "notes": "GPA 3.7. Admitted through the Robinson Center for Young Scholars after tenth grade. Dean's List, 2021–2026. Highest final exam and overall grade in Math 125 (Calculus with Analytic Geometry II) in a class of 118. Coursework: calculus, general chemistry and biology, organic chemistry, physical chemistry, physiology, genome sciences, biochemistry."
+    },
+    {
+      "institution": "Lake Oswego High School",
+      "credential": "Accepted to the University of Washington after tenth grade",
+      "startedOn": "2019-09",
+      "endedOn": "2021-06",
+      "notes": "GPA 4.0 unweighted, 4.17 weighted. Superintendent's Advisory Council. National Honor Society. Silver Award, 2020 Class National Essay Contest. Founded the school's SAT Prep Club."
     }
   ]
 }
